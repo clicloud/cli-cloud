@@ -1,65 +1,153 @@
-# CLI Cloud — Backend
+# CLI Cloud Backend
 
-The backend service for cli.cloud's container deployment platform. Handles container lifecycle management, catalog definitions, user authentication, and deployment orchestration.
+Backend documentation scaffold for the CLI Cloud container deployment service inside the `CLI-CLOUD-APP` monorepo.
 
-## Architecture
+## Status
 
-This is a monorepo backend (`apps/backend/`) that provides:
+- `apps/backend/` is currently a documentation scaffold in this repository snapshot.
+- The backend itself is treated as functionally complete at the product level, but the runtime source code is not present in this folder yet.
+- This README documents the intended service boundary, deployment contract, and the repo links that already support backend work.
 
-- Container deployment API — create, list, inspect, and destroy containers
-- Catalog management — predefined templates users can deploy in one click
-- Authentication and authorization — CLI account integration
-- Deployment pipeline — build, push, and run containers from templates or custom images
+## What Lives Here Today
 
-## Container Catalog
+Current files in `apps/backend/`:
 
-The platform ships with six starter templates:
+- `README.md` — backend overview and working notes
+- `AGENTS.md` — repo instruction pointer
+- `CLAUDE.md` — repo instruction pointer
+- `.env.example` — environment variable scaffold for the backend service
 
-| Label | Template | Port | Runtime |
-|---|---|---|---|
-| Web App | Next.js | 3000 | Node.js 20 |
-| AI Backend | FastAPI + SQLite | 8000 | Python 3.11 |
-| Chat Bot | Telegram Bot (Python) | — | Python 3.11 |
-| Simple Site | Static HTML | 80 | Nginx/Caddy |
-| API Server | Express.js | 3000 | Node.js 20 |
-| OpenClaw | Custom container | 8080 | Docker image |
+Related monorepo assets already in place:
 
-Each catalog entry defines: template source repo, runtime kind, default port, env defaults, storage allocation, supported capabilities (logs/exec/metrics), build steps, and start command. See `container-catalog-spec.md` in the project docs for the full spec.
+- [`../../.docs/container-catalog-spec.md`](../../.docs/container-catalog-spec.md) — canonical catalog entry spec
+- [`../../.docs/container-deploy-test-scaffolding.md`](../../.docs/container-deploy-test-scaffolding.md) — backend test-plan scaffold
+- `../../packages/container-templates/` — local starter templates already checked into this repo
 
-## API Endpoints
+## Architecture Overview
 
-Core endpoints (extend as needed):
+The backend owns the container deployment control plane for cli.cloud.
 
-- `POST /deploy` — Deploy a container from a catalog template or custom image
-- `GET /containers` — List running containers for the authenticated user
-- `GET /containers/:id` — Inspect a specific container (status, logs, metrics)
-- `DELETE /containers/:id` — Stop and remove a container
-- `GET /catalog` — List available catalog templates
-- `POST /auth/login` — Authenticate via CLI credentials
+Primary responsibilities:
 
-## Getting Started
+- authenticate the caller
+- validate deployment input
+- resolve a catalog template or custom image
+- start and track the deployment lifecycle
+- expose container status and management endpoints
+- return enough metadata for the frontend to show progress and project URLs
 
-1. Ensure Node.js 20+ and npm are installed
-2. Install dependencies: `npm ci`
-3. Configure environment variables (see `.env.example`)
-4. Run in development: `npm run dev`
-5. Run in production: `npm run build && npm start`
+High-level flow:
+
+1. The frontend sends a deploy request with a template ID or custom image plus project settings.
+2. The backend validates auth, naming rules, and environment variables.
+3. The backend resolves the selected template from the catalog and prepares runtime configuration.
+4. The deployment pipeline builds or pulls the container image, starts the workload, and stores state.
+5. The backend exposes status, logs, and lifecycle actions back to the client.
+
+## Catalog Coverage
+
+The current monorepo already contains these local starter templates under `packages/container-templates/`:
+
+| UI Label | Template ID | Runtime | Default Port | Local Template Path |
+|---|---|---|---|---|
+| Web App | `web-app` | Node.js 20 | 3000 | `../../packages/container-templates/nextjs-starter` |
+| AI Backend | `ai-backend` | Python 3.11 | 8000 | `../../packages/container-templates/fastapi-starter` |
+| Chat Bot | `chat-bot` | Python 3.11 | none | `../../packages/container-templates/telegram-bot-starter` |
+| Simple Site | `simple-site` | Static | 80 | `../../packages/container-templates/static-starter` |
+| API Server | `api-server` | Node.js 20 | 3000 | `../../packages/container-templates/express-starter` |
+| OpenClaw | `openclaw` | Custom image | 8080 | external image / registry-backed |
+
+For the full catalog contract, labels, and runtime defaults, use [`../../.docs/container-catalog-spec.md`](../../.docs/container-catalog-spec.md).
+
+## API Surface
+
+The working API surface described by the current monorepo docs is:
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/deploy` | Create a deployment from a catalog template or custom image |
+| `GET` | `/deploy/:id` | Poll deployment status and lifecycle state |
+| `DELETE` | `/deploy/:id` | Stop or terminate a deployment |
+| `GET` | `/containers` | List the authenticated user's running containers |
+| `GET` | `/containers/:id` | Inspect a specific container |
+| `DELETE` | `/containers/:id` | Remove a specific container |
+| `GET` | `/catalog` | Return available deployment templates |
+| `POST` | `/auth/login` | Exchange CLI credentials for an authenticated session or token |
+
+Expected deploy payload shape from the current planning docs:
+
+```json
+{
+  "templateId": "web-app",
+  "projectName": "my-app",
+  "envVars": {
+    "NODE_ENV": "production"
+  }
+}
+```
+
+Expected success response shape:
+
+```json
+{
+  "projectId": "proj_123",
+  "status": "pending",
+  "url": "https://my-app.cli.cloud"
+}
+```
+
+These route names and payloads are grounded in the repo docs today. If the implementation ships with different route names or response contracts, update this README and the frontend integration together.
 
 ## Environment Variables
 
-| Variable | Description | Required |
+An example file now exists at [`./.env.example`](./.env.example).
+
+| Variable | Required | Description |
 |---|---|---|
-| `PORT` | Server listen port (default: 3000) | No |
-| `DATABASE_URL` | Database connection string | Yes |
-| `JWT_SECRET` | Token signing key | Yes |
-| `CONTAINER_RUNTIME` | Runtime driver (docker/k8s) | Yes |
+| `PORT` | No | HTTP listen port for the backend service |
+| `DATABASE_URL` | Yes | Persistent store for deployments, users, and audit records |
+| `JWT_SECRET` | Yes | Signing secret for tokens or session validation |
+| `CONTAINER_RUNTIME` | Yes | Runtime driver name such as `docker` or `k8s` |
+| `REGISTRY_HOST` | No | Container registry host used for pushes and pulls |
+| `REGISTRY_USERNAME` | No | Registry username when auth is required |
+| `REGISTRY_PASSWORD` | No | Registry password or access token |
+| `DEFAULT_REGION` | No | Default deployment region if the platform supports more than one |
+| `LOG_LEVEL` | No | Application log level, for example `info` or `debug` |
 
-## Deployment
+If more secrets or provider-specific variables are introduced, add them to `.env.example` and this table in the same change.
 
-This backend is designed to run on CLI's own infrastructure. Deploy via the CLI platform or push to the monorepo's main branch for CI/CD.
+## Local Setup Notes
 
-## Notes
+There is no installable backend package manifest in `apps/backend/` yet in this snapshot, so do not assume `npm ci`, `composer install`, or `docker compose up` will work from this folder today.
 
-- The backend is functionally complete. Remaining work is frontend (landing page, deploy dialog UI) and marketing/onboarding.
-- Container catalog entries are defined in code and can be extended without frontend changes.
-- All template source repos live under the `clicloud` GitHub organization (e.g. `clicloud/templates/nextjs-starter`).
+What is ready right now:
+
+1. Review the service contract in this README.
+2. Review the catalog spec in [`../../.docs/container-catalog-spec.md`](../../.docs/container-catalog-spec.md).
+3. Review the test scaffold in [`../../.docs/container-deploy-test-scaffolding.md`](../../.docs/container-deploy-test-scaffolding.md).
+4. Review the starter templates under `../../packages/container-templates/`.
+5. Copy `./.env.example` to `.env` when the backend runtime files land.
+
+Expected backend app scaffold once source code is added:
+
+- application entrypoint
+- package or dependency manifest
+- Dockerfile and/or compose file
+- test directory
+- deployment runtime adapter
+- catalog registry loader
+
+## Container and Deployment Notes
+
+- Template-backed deploys should resolve against the local template catalog in this monorepo unless and until the project moves that registry elsewhere.
+- Custom-image deploys such as OpenClaw should be treated separately from source-template deploys because build, validation, and port assumptions differ.
+- Deployment status should remain pollable from the client after `POST /deploy`, which matches the existing deploy dialog spec.
+- Secret environment values should be masked in read APIs and logs.
+- Build and runtime failures should return explicit, operator-usable errors rather than generic frontend-only messaging.
+- Any implementation should preserve an audit trail for who deployed what, when, and from which template or image.
+
+## Documentation Maintenance Rules
+
+- Keep this file aligned with the real repo state. Do not document commands, manifests, or directories that are not present.
+- When the backend runtime code lands, update this README in the same pull request so setup and deployment steps stay accurate.
+- If API routes or payloads change, update this file and any frontend docs that consume those routes together.
